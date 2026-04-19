@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Căutare PN SEA</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+            background: #f6f8fb;
+            color: #172026;
+        }
+        .wrap {
+            width: min(1100px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 40px;
+        }
+        h1 {
+            margin: 0 0 8px;
+            font-size: 2rem;
+            color: #111827;
+        }
+        .sub {
+            margin: 0 0 20px;
+            color: #5b6773;
+        }
+        .box {
+            background: #fff;
+            border: 1px solid #d8e1e8;
+            border-radius: 10px;
+            padding: 18px;
+            box-shadow: 0 10px 28px rgba(26,37,51,.07);
+        }
+        .row {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 12px;
+        }
+        input {
+            width: 100%;
+            height: 52px;
+            padding: 0 16px;
+            border: 2px solid #14b8a6;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+        }
+        button {
+            height: 52px;
+            border: 0;
+            border-radius: 8px;
+            padding: 0 18px;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .search-btn { background: #16a34a; }
+        .clear-btn { background: #ff6b6b; }
+        .stats {
+            margin: 14px 0 0;
+            color: #61707d;
+            font-size: .95rem;
+        }
+        #results {
+            margin-top: 18px;
+            display: grid;
+            gap: 12px;
+        }
+        .empty {
+            border: 1px dashed #b9c6d2;
+            border-radius: 8px;
+            padding: 24px;
+            background: rgba(255,255,255,.7);
+            text-align: center;
+            color: #53616e;
+        }
+        .card {
+            background: #fff;
+            border: 1px solid #d8e1e8;
+            border-left: 6px solid #14b8a6;
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 10px 28px rgba(26,37,51,.07);
+        }
+        .pn {
+            margin: 0 0 10px;
+            font-size: 1.2rem;
+            color: #111827;
+            overflow-wrap: anywhere;
+        }
+        .line {
+            margin: 6px 0;
+            color: #33414d;
+            overflow-wrap: anywhere;
+        }
+        .muted {
+            color: #6b7784;
+        }
+        @media (max-width: 720px) {
+            .row { grid-template-columns: 1fr; }
+            button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <main class="wrap">
+        <h1>Căutare PN SEA</h1>
+        <p class="sub">Dublu click pe index.html. Caută PN, fișier, folder sau traseu.</p>
+
+        <section class="box">
+            <div class="row">
+                <input id="q" type="text" placeholder="Ex: SEA4-GEX47545_06 sau handload sau setup.xlsx" oninput="search()" onkeydown="onKey(event)">
+                <button class="search-btn" onclick="search()">Caută</button>
+                <button class="clear-btn" onclick="clearSearch()">Curăță</button>
+            </div>
+            <div class="stats" id="stats">Încarc datele...</div>
+        </section>
+
+        <section id="results">
+            <div class="empty">Scrie ce cauți.</div>
+        </section>
+    </main>
+
+    <script src="sea_index.js"></script>
+    <script>
+        let items = [];
+
+        function esc(text) {
+            return String(text || "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function norm(text) {
+            return String(text || "")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .trim();
+        }
+
+        function compact(text) {
+            return norm(text).replace(/[^a-z0-9]+/g, "");
+        }
+
+        function onKey(e) {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                search();
+            }
+        }
+
+        function updateStats() {
+            const generated = window.SEA_INDEX?.generatedAt || "-";
+            document.getElementById("stats").textContent =
+                `${items.length} intrări indexate | generat: ${generated}`;
+        }
+
+        function score(query, item) {
+            const qn = norm(query);
+            const qc = compact(query);
+
+            if (!qn) return 0;
+
+            const fields = [
+                item.pn,
+                item.file,
+                item.folder,
+                item.fullRoute,
+                item.sheet,
+                item.cellText,
+                item.source
+            ];
+
+            let best = 0;
+
+            for (const field of fields) {
+                const fn = norm(field);
+                const fc = compact(field);
+
+                if (!fn) continue;
+
+                if (fc === qc) best = Math.max(best, 1000);
+                else if (fn === qn) best = Math.max(best, 900);
+                else if (fc.includes(qc)) best = Math.max(best, 700);
+                else if (fn.includes(qn)) best = Math.max(best, 650);
+            }
+
+            return best;
+        }
+
+        function render(list) {
+            const box = document.getElementById("results");
+
+            if (!list.length) {
+                box.innerHTML = '<div class="empty">Nu am găsit nimic.</div>';
+                return;
+            }
+
+            box.innerHTML = list.map(item => `
+                <article class="card">
+                    <h2 class="pn">${esc(item.pn)}</h2>
+                    <div class="line"><strong>Fișier:</strong> ${esc(item.file)}</div>
+                    <div class="line"><strong>Folder:</strong> ${esc(item.folder || "—")}</div>
+                    <div class="line"><strong>Traseu complet:</strong> ${esc(item.fullRoute)}</div>
+                    <div class="line"><strong>Sursă:</strong> ${item.source === "cell" ? "celulă Excel" : "nume fișier"}</div>
+                    ${item.sheet ? `<div class="line"><strong>Foaie:</strong> ${esc(item.sheet)}</div>` : ""}
+                    ${item.row ? `<div class="line"><strong>Rând:</strong> ${esc(item.row)} | <strong>Coloană:</strong> ${esc(item.column)}</div>` : ""}
+                    ${item.cellText ? `<div class="line muted"><strong>Text celulă:</strong> ${esc(item.cellText)}</div>` : ""}
+                </article>
+            `).join("");
+        }
+
+        function search() {
+            const q = document.getElementById("q").value.trim();
+
+            if (!q) {
+                document.getElementById("results").innerHTML = '<div class="empty">Scrie ce cauți.</div>';
+                return;
+            }
+
+            const list = items
+                .map(item => ({ item, score: score(q, item) }))
+                .filter(x => x.score > 0)
+                .sort((a, b) => b.score - a.score || a.item.pn.localeCompare(b.item.pn))
+                .map(x => x.item);
+
+            render(list);
+        }
+
+        function clearSearch() {
+            document.getElementById("q").value = "";
+            document.getElementById("results").innerHTML = '<div class="empty">Scrie ce cauți.</div>';
+            document.getElementById("q").focus();
+        }
+
+        function init() {
+            if (!window.SEA_INDEX || !Array.isArray(window.SEA_INDEX.items)) {
+                document.getElementById("stats").textContent = "Lipsește sea_index.js";
+                document.getElementById("results").innerHTML =
+                    '<div class="empty">Pune <strong>sea_index.js</strong> lângă <strong>index.html</strong>.</div>';
+                return;
+            }
+
+            items = window.SEA_INDEX.items;
+            updateStats();
+            document.getElementById("results").innerHTML =
+                '<div class="empty">Date încărcate. Scrie ce cauți.</div>';
+        }
+
+        window.addEventListener("load", init);
+    </script>
+</body>
+</html>

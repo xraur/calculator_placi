@@ -1,0 +1,327 @@
+# ==============================================================================
+# SCRIPT GENERARE STRUCTURA SETUP-URI SEA
+# Ruleaza: Click dreapta pe fisier -> "Run with PowerShell"
+# ==============================================================================
+
+$OutputFile = "Structura_Setup_SEA.txt"
+$DataFile = "Structura_Setup_SEA.js"
+$RootFolder = $PSScriptRoot
+
+# ==============================================================================
+# ⚙️ CONFIGURARE - MODIFICA AICI CE DORESTI
+# ==============================================================================
+
+# ==========================================================================
+# CONFIGURAREA TA - MODIFICI DOAR AICI
+# ==========================================================================
+
+# 1) Rafturi / locatii pentru familii.
+# Familia = primul folder din structura. Exemple: "Bit Box", "Nikko", "P5".
+# Scrii locatiile exact cum sunt ele: "MODULU 1", "MODULU 5", "A 2", "B 5".
+$RafturiFamilii = @{
+    # "Bit Box" = @("MODULU 1", "A 2", "A 6")
+    # "Nikko" = @("MODULU 5", "B 5")
+    # "P5" = @("C 1")
+}
+
+# 2) Exceptii pentru PN-uri sau prefixe de PN.
+# Asta bate peste raftul familiei. Folosesti doar daca trebuie.
+$RafturiPN = @{
+    # "SEAH-Z701440-02" = @("MODULU 5")
+    # "SEA4-WHOLM" = @("A 4") # toate PN-urile care incep cu SEA4-WHOLM
+}
+
+# 3) Categorii simple.
+# Exemplu: toate PN-urile care incep cu SEA4-WHOLM sunt Cutii.
+$CategoriiPN = @(
+    # @{ Categorie = "Cutii"; IncepeCu = @("SEA4-WHOLM") }
+    # @{ Categorie = "Bureti"; IncepeCu = @("SEA4-SPG") }
+    # @{ Categorie = "Placi"; IncepeCu = @("SEA4-NNZ8", "F-09-0118_C1") }
+    # @{ Categorie = "Componente"; IncepeCu = @("SEA4-HRB") }
+)
+
+# ==============================================================================
+# FUNCTII AUXILIARE
+# ==============================================================================
+
+function Get-ExcelContent {
+    param([string]$FilePath)
+    
+    $content = ""
+    
+    # Metoda 1: Citire ca text (pentru .xls vechi sau CSV)
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($FilePath)
+        # Verifica daca e OLE Compound Document
+        if ($bytes[0] -eq 0xD0 -and $bytes[1] -eq 0xCF) {
+            # E format vechi Excel, incearca alta metoda
+        } else {
+            # Incearca ca text
+            $content = [System.Text.Encoding]::UTF8.GetString($bytes) -replace '[^\x20-\x7E]', ' '
+            if ($content.Length -gt 100) { return $content }
+        }
+    }
+    catch {}
+    
+    # Metoda 2: Incearca cu Excel COM (daca e instalat)
+    try {
+        $excel = New-Object -ComObject Excel.Application
+        $excel.Visible = $false
+        $excel.DisplayAlerts = $false
+        $workbook = $excel.Workbooks.Open($FilePath, $false, $true)
+        
+        if ($workbook) {
+            $sheet = $workbook.Sheets.Item(1)
+            $usedRange = $sheet.UsedRange
+            $text = ""
+            
+            foreach ($row in $usedRange) {
+                if ($row) { $text += $row.ToString() + "`n" }
+            }
+            
+            $workbook.Close($false)
+            $excel.Quit()
+            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+            
+            if ($text.Length -gt 100) { return $text }
+        }
+    }
+    catch {
+        try { $excel.Quit() } catch {}
+    }
+    
+    # Metoda 3: Incearca modulul ImportExcel (daca e instalat)
+    try {
+        if (Get-Module -ListAvailable -Name ImportExcel) {
+            $data = Import-Excel -Path $FilePath -ErrorAction SilentlyContinue
+            if ($data) {
+                return ($data | ConvertTo-Json -Compress)
+            }
+        }
+    }
+    catch {}
+    
+    return $content
+}
+
+function Get-PNsFromText {
+    param([string]$Text)
+    
+    $pns = @()
+    
+    # Pattern-uri pentru PN-uri SEA
+    $patterns = @(
+        'SEA[0-9]+-[A-Z0-9]+_?\d+',      # SEA4-XXXXX_00
+        'SEA4-[A-Z0-9]+-\d+',             # SEA4-XXXXX-00
+        'SEAH-[A-Z0-9]+-\d+',             # SEAH-XXXXX-00
+        'F-09-0118_[A-Za-z0-9\s]+',       # F-09-0118_XXX
+        'SEA4-[A-Z]{3}[A-Z0-9]{5}_\d+'    # SEA4-XXX00000_00
+    )
+    
+    foreach ($pattern in $patterns) {
+        $regexMatches = [regex]::Matches($Text, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        foreach ($match in $regexMatches) {
+            $pn = $match.Value.Trim()
+            if ($pn -and $pns -notcontains $pn) {
+                $pns += $pn
+            }
+        }
+    }
+    
+    return $pns
+}
+
+function Get-Shelf {
+    param(
+        [string]$PN,
+        [string]$Family
+    )
+    
+    foreach ($key in $RafturiPN.Keys) {
+        if ($PN.StartsWith($key, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return ($RafturiPN[$key] -join ", ")
+        }
+    }
+
+    foreach ($key in $RafturiFamilii.Keys) {
+        if ($Family -eq $key) {
+            return ($RafturiFamilii[$key] -join ", ")
+        }
+    }
+
+    return "?"
+}
+
+function Test-PNRule {
+    param(
+        [string]$PN,
+        [string[]]$Rules
+    )
+
+    foreach ($rule in $Rules) {
+        if ($rule -and $PN.StartsWith($rule, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-FamilyFromPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return "Necunoscut" }
+    $parts = $Path -split '[\\/]' | Where-Object { $_ -and $_.Trim() }
+    if ($parts.Count -gt 0) { return $parts[0].Trim() }
+    return "Necunoscut"
+}
+
+function Get-Category {
+    param([string]$PN)
+
+    foreach ($rule in $CategoriiPN) {
+        if (Test-PNRule -PN $PN -Rules $rule.IncepeCu) {
+            return $rule.Categorie
+        }
+    }
+
+    return "Necategorisit"
+}
+
+function Get-TypeFromFilename {
+    param([string]$Filename)
+    
+    $lower = $Filename.ToLower()
+    
+    if ($lower -match 'assy|asamblare|assembly') { return "Assy" }
+    if ($lower -match 'prep|preparare') { return "Prep" }
+    if ($lower -match 'hand.?load|hl[^a-z]') { return "Handload" }
+    if ($lower -match 'hand.?solder|hs|soldering') { return "Hand Soldering" }
+    if ($lower -match 'press.?fit|pf') { return "Pressfit" }
+    if ($lower -match 'pack|product.?pack') { return "Pack" }
+    if ($lower -match 'label') { return "Label" }
+    if ($lower -match 'light.?guide') { return "Light Guide" }
+    
+    return "Setup"
+}
+
+# ==============================================================================
+# GENERARE STRUCTURA
+# ==============================================================================
+
+Write-Host "=== Generare Structura SEA ===" -ForegroundColor Cyan
+Write-Host "Folder: $RootFolder"
+
+$result = @()
+$result += "=== STRUCTURA SETUP-URI SEA ==="
+$result += "Generat: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+$result += "Folder: $RootFolder"
+$result += ""
+$result += "=== RAFTURI PE FAMILII ==="
+
+# Adauga configuratia curenta de rafturi
+foreach ($key in $RafturiFamilii.Keys) {
+    $result += "$key -> $($RafturiFamilii[$key] -join ', ')"
+}
+
+$result += ""
+$result += "=== EXCEPTII RAFTURI PE PN/PREFIX ==="
+foreach ($key in $RafturiPN.Keys) {
+    $result += "$key -> $($RafturiPN[$key] -join ', ')"
+}
+
+$result += ""
+$result += "=== REGULI PN OPTIONALE ==="
+foreach ($rule in $CategoriiPN) {
+    $result += "$($rule.Categorie): $($rule.IncepeCu -join ', ')"
+}
+
+$result += ""
+$result += "=== LISTA PN-URI ==="
+
+$processedFiles = 0
+$foundPNs = @{}
+
+# Parcurge toate folderele recursiv
+Get-ChildItem -Path $RootFolder -Directory -Recurse | ForEach-Object {
+    $currentPath = $_.FullName.Replace($RootFolder, "").TrimStart("\")
+    $family = Get-FamilyFromPath -Path $currentPath
+    
+    # Parcurge fisierele Excel (fara .tmp)
+    Get-ChildItem -Path $_.FullName -File | Where-Object { 
+        $_.Extension -in @(".xls", ".xlsx", ".xlsm") -and $_.Name -notmatch '\.tmp$' 
+    } | ForEach-Object {
+        $file = $_
+        $processedFiles++
+        
+        # Extrage PN din numele fisierului
+        $pnFromName = Get-PNsFromText -Text $file.Name
+        
+        # Citeste continutul fisierului pentru PN-uri suplimentare
+        $content = Get-ExcelContent -FilePath $file.FullName
+        $pnsFromContent = @()
+        if ($content) {
+            $pnsFromContent = Get-PNsFromText -Text $content
+        }
+        
+        # Combină PN-uri din nume și conținut
+        $allPNs = @()
+        foreach ($pn in $pnFromName) { if ($allPNs -notcontains $pn) { $allPNs += $pn } }
+        foreach ($pn in $pnsFromContent) { if ($allPNs -notcontains $pn) { $allPNs += $pn } }
+        
+        $fileType = Get-TypeFromFilename -Filename $file.Name
+        # Adauga in rezultate
+        foreach ($pn in $allPNs) {
+            $key = "$pn|$fileType|$currentPath|$($file.Name)"
+            if (-not $foundPNs.ContainsKey($key)) {
+                $foundPNs[$key] = @{
+                    PN = $pn
+                    Type = $fileType
+                    File = $file.Name
+                    Path = $currentPath
+                    Family = $family
+                    Category = Get-Category -PN $pn
+                    Shelf = Get-Shelf -PN $pn -Family $family
+                    Content = if ($content -and $content.Length -lt 2000) { $content.Substring(0, [Math]::Min(1000, $content.Length)) } else { "" }
+                }
+            }
+        }
+    }
+}
+
+# Sorteaza si afiseaza rezultatele
+$foundPNs.Values | Sort-Object PN | ForEach-Object {
+    $item = $_
+    $result += ""
+    $result += "--- PN: $($item.PN) ---"
+    $result += "Tip: $($item.Type)"
+    $result += "Fisier: $($item.File)"
+    $result += "Familie: $($item.Family)"
+    $result += "Categorie: $($item.Category)"
+    $result += "Raft: $($item.Shelf)"
+    $result += "Loca: $($item.Path)"
+    
+    if ($item.Content) {
+        $result += "Continut (extras): $($item.Content)"
+    }
+}
+
+# Salveaza
+$outputPath = Join-Path $RootFolder $OutputFile
+$dataPath = Join-Path $RootFolder $DataFile
+$result | Out-File -FilePath $outputPath -Encoding UTF8
+
+$textForBrowser = ($result -join "`n") | ConvertTo-Json -Compress
+$dataScript = @(
+    "window.STRUCTURA_SEA_SOURCE = '$OutputFile';"
+    "window.STRUCTURA_SEA_TEXT = $textForBrowser;"
+)
+$dataScript | Out-File -FilePath $dataPath -Encoding UTF8
+
+Write-Host ""
+Write-Host "=== COMPLET ===" -ForegroundColor Green
+Write-Host "Fisiere procesate: $processedFiles"
+Write-Host "PN-uri unice gasite: $($foundPNs.Count)"
+Write-Host "Salvat in: $OutputFile"
+Write-Host "Date pentru dublu-click: $DataFile"
+

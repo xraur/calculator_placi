@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Căutare setup-uri SEA</title>
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+            color: #172026;
+            background:
+                linear-gradient(135deg, rgba(20, 184, 166, 0.12), transparent 32%),
+                linear-gradient(315deg, rgba(255, 107, 107, 0.12), transparent 35%),
+                #f6f8fb;
+        }
+
+        .shell {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 42px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 22px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 2rem;
+            line-height: 1.1;
+            color: #111827;
+        }
+
+        .subtitle {
+            margin: 0;
+            color: #5b6773;
+        }
+
+        .status {
+            min-width: 260px;
+            padding: 10px 12px;
+            border: 1px solid #d9e2ea;
+            border-radius: 8px;
+            background: #fff;
+            color: #34414d;
+            font-size: 0.92rem;
+        }
+
+        .search-panel {
+            border: 1px solid #d8e1e8;
+            border-radius: 8px;
+            background: #fff;
+            padding: 18px;
+            box-shadow: 0 14px 36px rgba(26, 37, 51, 0.08);
+        }
+
+        .search-row {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 12px;
+            align-items: center;
+        }
+
+        #searchInput {
+            width: 100%;
+            height: 54px;
+            padding: 0 16px;
+            border: 2px solid #14b8a6;
+            border-radius: 8px;
+            background: #fbfdff;
+            color: #101820;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        #searchInput:focus {
+            box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.14);
+        }
+
+        .search-btn,
+        .clear-btn {
+            height: 54px;
+            border: 0;
+            border-radius: 8px;
+            padding: 0 18px;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .search-btn { background: #16a34a; }
+        .clear-btn { background: #ff6b6b; }
+
+        .shelves {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            margin: 18px 0;
+        }
+
+        .shelf {
+            border: 1px solid #d8e1e8;
+            border-left: 4px solid #14b8a6;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fff;
+        }
+
+        .shelf strong {
+            display: block;
+            font-size: 1rem;
+            color: #0f766e;
+        }
+
+        .shelf span {
+            display: block;
+            margin-top: 3px;
+            color: #6a7682;
+            font-size: 0.82rem;
+        }
+
+        #results {
+            margin-top: 18px;
+        }
+
+        .empty {
+            border: 1px dashed #b9c6d2;
+            border-radius: 8px;
+            padding: 26px;
+            background: rgba(255, 255, 255, 0.72);
+            color: #53616e;
+            text-align: center;
+        }
+
+        .result-card {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 16px;
+            margin-bottom: 12px;
+            border: 1px solid #d8e1e8;
+            border-left: 6px solid #14b8a6;
+            border-radius: 8px;
+            background: #fff;
+            padding: 16px;
+            box-shadow: 0 10px 28px rgba(26, 37, 51, 0.07);
+        }
+
+        .result-card.cutii { border-left-color: #22c55e; }
+        .result-card.placi { border-left-color: #f59e0b; }
+        .result-card.componente { border-left-color: #3b82f6; }
+        .result-card.bureti { border-left-color: #ec4899; }
+        .result-card.necategorizat { border-left-color: #14b8a6; }
+
+        .pn {
+            margin: 0;
+            color: #111827;
+            font-size: 1.28rem;
+            overflow-wrap: anywhere;
+        }
+
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 10px 0 12px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 26px;
+            padding: 4px 9px;
+            border-radius: 8px;
+            background: #edf7f6;
+            color: #0f766e;
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+
+        .pill.category {
+            background: #eef2ff;
+            color: #3655a4;
+        }
+
+        .pill.filecount {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .route {
+            margin-top: 10px;
+            color: #46515c;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+
+        .files {
+            margin-top: 12px;
+            display: grid;
+            gap: 7px;
+        }
+
+        .file-row {
+            padding: 10px;
+            border-radius: 8px;
+            background: #f5f7fa;
+            color: #2d3843;
+            overflow-wrap: anywhere;
+        }
+
+        .file-row strong {
+            color: #111827;
+        }
+
+        .file-line {
+            margin-top: 4px;
+            color: #61707d;
+            font-size: 0.92rem;
+        }
+
+        .side {
+            min-width: 130px;
+            text-align: right;
+            color: #44515d;
+        }
+
+        .shelf-badge {
+            display: inline-block;
+            min-width: 70px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: #111827;
+            color: #fff;
+            font-weight: 800;
+            text-align: center;
+        }
+
+        .muted {
+            color: #71808f;
+            font-size: 0.9rem;
+        }
+
+        .toggle-wrap {
+            margin-top: 12px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #53616e;
+            font-size: 0.92rem;
+        }
+
+        @media (max-width: 720px) {
+            .topbar { display: block; }
+            .status { margin-top: 14px; min-width: 0; }
+            .search-row { grid-template-columns: 1fr; }
+            .search-btn, .clear-btn { width: 100%; }
+            .result-card { grid-template-columns: 1fr; }
+            .side { text-align: left; }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <section class="topbar">
+            <div>
+                <h1>Căutare setup-uri SEA</h1>
+                <p class="subtitle">Caută PN, fișier, familie sau traseu.</p>
+            </div>
+            <div class="status" id="stats">Încarc datele...</div>
+        </section>
+
+        <section class="search-panel">
+            <div class="search-row">
+                <input id="searchInput" type="text" placeholder="Ex: SEA4-GEX47545_06, Nikko, handload, setup.xlsx" oninput="search()" onkeydown="handleSearchKey(event)">
+                <button class="search-btn" onclick="search()">Caută</button>
+                <button class="clear-btn" onclick="clearSearch()">Curăță</button>
+            </div>
+
+            <div class="toggle-wrap">
+                <label class="toggle">
+                    <input type="checkbox" id="showCellText">
+                    Arată și textul celulei
+                </label>
+                <label class="toggle">
+                    <input type="checkbox" id="showAllHits">
+                    Arată toate aparițiile
+                </label>
+            </div>
+        </section>
+
+        <section class="shelves" id="shelvesDisplay"></section>
+        <section id="results"><div class="empty">Scrie ce cauți.</div></section>
+    </main>
+
+    <script src="sea_index.js"></script>
+    <script>
+        // ==========================================================================
+        // CONFIGURAREA TA - MODIFICI DOAR AICI
+        // ==========================================================================
+
+        const CONFIGURARE = {
+            rafturiFamilii: {
+                // "Bit Box": ["MODULU 1", "A 2", "A 6"],
+                // "Nikko": ["MODULU 5", "B 5"],
+                // "P5": ["C 1"],
+            },
+
+            rafturiPN: {
+                // "SEAH-Z701440-02": ["MODULU 5"],
+                // "SEA4-WHOLM": ["A 4"],
+            },
+
+            categoriiPN: [
+                // { categorie: "Cutii", incepeCu: ["SEA4-WHOLM"] },
+                // { categorie: "Bureti", incepeCu: ["SEA4-SPG"] },
+                // { categorie: "Placi", incepeCu: ["SEA4-NNZ8", "F-09-0118_C1"] },
+                // { categorie: "Componente", incepeCu: ["SEA4-HRB"] },
+            ],
+
+            rezultateMaxime: 150,
+            aparitiiPeCardImplicit: 8
+        };
+
+        // ==========================================================================
+        // DATE
+        // ==========================================================================
+
+        let rawItems = [];
+        let groupedItems = [];
+        let searchCache = [];
+
+        // ==========================================================================
+        // UTILS
+        // ==========================================================================
+
+        function normalize(text) {
+            return String(text || "").trim();
+        }
+
+        function escapeHtml(text) {
+            return String(text || "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function normalizeSearch(text) {
+            return String(text || "")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^a-z0-9]+/g, " ")
+                .trim();
+        }
+
+        function compactSearch(text) {
+            return normalizeSearch(text).replace(/\s+/g, "");
+        }
+
+        function slug(text) {
+            return String(text || "necategorizat")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-|-$/g, "") || "necategorizat";
+        }
+
+        function firstFolder(path) {
+            const cleaned = String(path || "").replaceAll("\\", "/").trim();
+            return cleaned.split("/").filter(Boolean)[0] || "Necunoscut";
+        }
+
+        function getShelfForPN(pn, family) {
+            const upperPn = String(pn || "").toUpperCase();
+
+            const pnKey = Object.keys(CONFIGURARE.rafturiPN)
+                .sort((a, b) => b.length - a.length)
+                .find((prefix) => upperPn.startsWith(String(prefix).toUpperCase()));
+
+            if (pnKey) {
+                return [].concat(CONFIGURARE.rafturiPN[pnKey]).join(", ");
+            }
+
+            const familyKey = Object.keys(CONFIGURARE.rafturiFamilii)
+                .find((name) => String(name).toLowerCase() === String(family).toLowerCase());
+
+            if (familyKey) {
+                return [].concat(CONFIGURARE.rafturiFamilii[familyKey]).join(", ");
+            }
+
+            return "?";
+        }
+
+        function matchesAnyRule(pn, rules) {
+            const upperPn = String(pn || "").toUpperCase();
+            return (rules || []).some(rule => upperPn.startsWith(String(rule).toUpperCase()));
+        }
+
+        function getCategoryForPN(pn) {
+            const found = CONFIGURARE.categoriiPN.find(rule => matchesAnyRule(pn, rule.incepeCu || []));
+            if (!found) {
+                return { key: "necategorizat", label: "Necategorisit" };
+            }
+
+            return {
+                key: slug(found.categorie),
+                label: found.categorie
+            };
+        }
+
+        function levenshtein(a, b) {
+            if (a === b) return 0;
+            if (!a.length) return b.length;
+            if (!b.length) return a.length;
+
+            const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+            const curr = new Array(b.length + 1);
+
+            for (let i = 1; i <= a.length; i++) {
+                curr[0] = i;
+                for (let j = 1; j <= b.length; j++) {
+                    const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                    curr[j] = Math.min(
+                        curr[j - 1] + 1,
+                        prev[j] + 1,
+                        prev[j - 1] + cost
+                    );
+                }
+                for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+            }
+
+            return prev[b.length];
+        }
+
+        function maxTypoDistance(term) {
+            if (term.length <= 2) return 0;
+            if (term.length <= 6) return 1;
+            return 2;
+        }
+
+        // ==========================================================================
+        // PRELUCRARE DATE
+        // ==========================================================================
+
+        function buildGroupedData(items) {
+            const map = new Map();
+
+            for (const raw of items) {
+                const pn = normalize(raw.pn).toUpperCase();
+                if (!pn) continue;
+
+                const folder = normalize(raw.folder).replaceAll("\\", "/");
+                const family = firstFolder(folder || raw.fullRoute);
+                const category = getCategoryForPN(pn);
+                const shelf = getShelfForPN(pn, family);
+
+                if (!map.has(pn)) {
+                    map.set(pn, {
+                        pn,
+                        family,
+                        category,
+                        shelf,
+                        paths: [],
+                        files: [],
+                        sources: [],
+                        searchText: ""
+                    });
+                }
+
+                const entry = map.get(pn);
+
+                if (entry.family === "Necunoscut" && family !== "Necunoscut") {
+                    entry.family = family;
+                    entry.shelf = getShelfForPN(pn, family);
+                }
+
+                if (folder && !entry.paths.includes(folder)) {
+                    entry.paths.push(folder);
+                }
+
+                const fileKey = [
+                    normalize(raw.file),
+                    normalize(raw.fullRoute),
+                    normalize(raw.sheet),
+                    raw.row ?? "",
+                    raw.column ?? "",
+                    normalize(raw.source)
+                ].join("|");
+
+                if (!entry._seenFiles) entry._seenFiles = new Set();
+
+                if (!entry._seenFiles.has(fileKey)) {
+                    entry._seenFiles.add(fileKey);
+                    entry.files.push({
+                        file: normalize(raw.file),
+                        folder,
+                        fullRoute: normalize(raw.fullRoute).replaceAll("\\", "/"),
+                        source: normalize(raw.source),
+                        sheet: normalize(raw.sheet),
+                        row: raw.row ?? null,
+                        column: raw.column ?? null,
+                        cellText: normalize(raw.cellText)
+                    });
+                }
+            }
+
+            const grouped = [...map.values()].map(entry => {
+                delete entry._seenFiles;
+
+                entry.files.sort((a, b) => {
+                    return a.fullRoute.localeCompare(b.fullRoute)
+                        || a.sheet.localeCompare(b.sheet)
+                        || (a.row || 0) - (b.row || 0)
+                        || (a.column || 0) - (b.column || 0);
+                });
+
+                entry.paths.sort((a, b) => a.localeCompare(b));
+
+                const searchParts = [
+                    entry.pn,
+                    entry.family,
+                    entry.category.label,
+                    entry.shelf,
+                    ...entry.paths,
+                    ...entry.files.flatMap(file => [
+                        file.file,
+                        file.folder,
+                        file.fullRoute,
+                        file.sheet,
+                        file.source
+                    ])
+                ];
+
+                entry.searchText = searchParts.join(" ");
+                return entry;
+            });
+
+            grouped.sort((a, b) => a.pn.localeCompare(b.pn));
+            return grouped;
+        }
+
+        function buildSearchCache(items) {
+            return items.map(item => {
+                const fields = [
+                    item.pn,
+                    item.family,
+                    item.category.label,
+                    item.shelf,
+                    ...item.paths,
+                    ...item.files.flatMap(file => [
+                        file.file,
+                        file.folder,
+                        file.fullRoute,
+                        file.sheet,
+                        file.source
+                    ])
+                ].filter(Boolean);
+
+                return {
+                    item,
+                    fields,
+                    normalizedFields: fields.map(normalizeSearch),
+                    compactFields: fields.map(compactSearch),
+                    normalizedAll: normalizeSearch(fields.join(" ")),
+                    compactAll: compactSearch(fields.join(" "))
+                };
+            });
+        }
+
+        // ==========================================================================
+        // SEARCH
+        // ==========================================================================
+
+        function tokenScore(term, cacheEntry) {
+            const compactTerm = compactSearch(term);
+            let best = 0;
+
+            for (let i = 0; i < cacheEntry.normalizedFields.length; i++) {
+                const normalized = cacheEntry.normalizedFields[i];
+                const compact = cacheEntry.compactFields[i];
+
+                if (!normalized && !compact) continue;
+
+                if (normalized === term || compact === compactTerm) best = Math.max(best, 200);
+                else if (normalized.includes(term) || compact.includes(compactTerm)) best = Math.max(best, 140);
+
+                const words = normalized.split(/\s+/).filter(Boolean);
+                for (const word of words) {
+                    if (word === term) best = Math.max(best, 180);
+                    else if (word.startsWith(term) || term.startsWith(word)) best = Math.max(best, 125);
+                    else if (Math.abs(word.length - term.length) <= maxTypoDistance(term)) {
+                        const distance = levenshtein(term, word);
+                        if (distance <= maxTypoDistance(term)) {
+                            best = Math.max(best, 95 - distance * 15);
+                        }
+                    }
+                }
+            }
+
+            return best;
+        }
+
+        function scoreMatch(query, cacheEntry) {
+            const normalizedQuery = normalizeSearch(query);
+            const compactQuery = compactSearch(query);
+            if (!normalizedQuery) return 0;
+
+            const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+            let score = 0;
+
+            if (cacheEntry.compactAll === compactQuery) score += 1200;
+            if (cacheEntry.normalizedAll === normalizedQuery) score += 1000;
+            if (compactSearch(cacheEntry.item.pn) === compactQuery) score += 1500;
+            if (cacheEntry.compactAll.includes(compactQuery)) score += 450;
+            if (cacheEntry.normalizedAll.includes(normalizedQuery)) score += 350;
+
+            for (const term of terms) {
+                const partScore = tokenScore(term, cacheEntry);
+                if (!partScore) return 0;
+                score += partScore;
+            }
+
+            return score;
+        }
+
+        // ==========================================================================
+        // UI
+        // ==========================================================================
+
+        function renderShelves() {
+            const shelfDiv = document.getElementById("shelvesDisplay");
+            const familyEntries = Object.entries(CONFIGURARE.rafturiFamilii);
+            const pnEntries = Object.entries(CONFIGURARE.rafturiPN);
+
+            if (!familyEntries.length && !pnEntries.length) {
+                shelfDiv.innerHTML = "";
+                return;
+            }
+
+            const familyHtml = familyEntries.map(([family, shelves]) => `
+                <div class="shelf">
+                    <strong>${escapeHtml(family)}</strong>
+                    <span>${escapeHtml([].concat(shelves).join(", "))}</span>
+                </div>
+            `).join("");
+
+            const pnHtml = pnEntries.map(([prefix, shelves]) => `
+                <div class="shelf">
+                    <strong>${escapeHtml(prefix)}</strong>
+                    <span>${escapeHtml([].concat(shelves).join(", "))}</span>
+                </div>
+            `).join("");
+
+            shelfDiv.innerHTML = familyHtml + pnHtml;
+        }
+
+        function updateStats() {
+            const totalFiles = new Set(
+                rawItems.map(x => `${x.file}|${x.fullRoute}`)
+            ).size;
+
+            const generated = window.SEA_INDEX?.generatedAt || "-";
+
+            document.getElementById("stats").textContent =
+                `${groupedItems.length} PN-uri, ${totalFiles} fișiere | generat: ${generated}`;
+        }
+
+        function renderResults(matches) {
+            const resultsDiv = document.getElementById("results");
+            const showCellText = document.getElementById("showCellText").checked;
+            const showAllHits = document.getElementById("showAllHits").checked;
+
+            if (!matches.length) {
+                resultsDiv.innerHTML = '<div class="empty">Nu am găsit nimic.</div>';
+                return;
+            }
+
+            resultsDiv.innerHTML = matches.map(item => {
+                const visibleFiles = showAllHits
+                    ? item.files
+                    : item.files.slice(0, CONFIGURARE.aparitiiPeCardImplicit);
+
+                const hiddenCount = item.files.length - visibleFiles.length;
+
+                return `
+                    <article class="result-card ${escapeHtml(item.category.key)}">
+                        <div>
+                            <h2 class="pn">${escapeHtml(item.pn)}</h2>
+
+                            <div class="meta">
+                                <span class="pill">${escapeHtml(item.family)}</span>
+                                <span class="pill category">${escapeHtml(item.category.label)}</span>
+                                <span class="pill filecount">${item.files.length} apariții</span>
+                            </div>
+
+                            <div class="route">
+                                <strong>Foldere:</strong> ${escapeHtml(item.paths.join(" | ") || "—")}
+                            </div>
+
+                            <div class="files">
+                                ${visibleFiles.map(file => `
+                                    <div class="file-row">
+                                        <strong>${escapeHtml(file.file)}</strong>
+                                        <div class="file-line"><strong>Folder:</strong> ${escapeHtml(file.folder || "—")}</div>
+                                        <div class="file-line"><strong>Traseu:</strong> ${escapeHtml(file.fullRoute || "—")}</div>
+                                        <div class="file-line"><strong>Sursă:</strong> ${file.source === "cell" ? "celulă Excel" : "nume fișier"}</div>
+                                        ${file.sheet ? `<div class="file-line"><strong>Foaie:</strong> ${escapeHtml(file.sheet)}</div>` : ""}
+                                        ${file.row ? `<div class="file-line"><strong>Rând:</strong> ${escapeHtml(file.row)} | <strong>Coloană:</strong> ${escapeHtml(file.column)}</div>` : ""}
+                                        ${showCellText && file.cellText ? `<div class="file-line muted"><strong>Text celulă:</strong> ${escapeHtml(file.cellText)}</div>` : ""}
+                                    </div>
+                                `).join("")}
+                            </div>
+
+                            ${hiddenCount > 0 && !showAllHits ? `
+                                <div class="file-line muted" style="margin-top:10px;">
+                                    + încă ${hiddenCount} apariții. Bifează „Arată toate aparițiile”.
+                                </div>
+                            ` : ""}
+                        </div>
+
+                        <div class="side">
+                            <div class="shelf-badge">${item.shelf !== "?" ? `Raft ${escapeHtml(item.shelf)}` : "Fără raft"}</div>
+                            <div class="muted">${item.shelf !== "?" ? "din configurare" : ""}</div>
+                        </div>
+                    </article>
+                `;
+            }).join("");
+        }
+
+        function search() {
+            const query = document.getElementById("searchInput").value.trim();
+
+            if (!query) {
+                document.getElementById("results").innerHTML = '<div class="empty">Scrie ce cauți.</div>';
+                return;
+            }
+
+            const matches = searchCache
+                .map(entry => ({ item: entry.item, score: scoreMatch(query, entry) }))
+                .filter(entry => entry.score > 0)
+                .sort((a, b) => b.score - a.score || a.item.pn.localeCompare(b.item.pn))
+                .slice(0, CONFIGURARE.rezultateMaxime)
+                .map(entry => entry.item);
+
+            renderResults(matches);
+        }
+
+        function clearSearch() {
+            document.getElementById("searchInput").value = "";
+            document.getElementById("results").innerHTML = '<div class="empty">Scrie ce cauți.</div>';
+            document.getElementById("searchInput").focus();
+        }
+
+        function handleSearchKey(event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                search();
+            }
+        }
+
+        function init() {
+            if (!window.SEA_INDEX || !Array.isArray(window.SEA_INDEX.items)) {
+                document.getElementById("stats").textContent = "Lipsește sea_index.js";
+                document.getElementById("results").innerHTML =
+                    '<div class="empty">Lipsește fișierul sea_index.js lângă index.html.</div>';
+                return;
+            }
+
+            rawItems = window.SEA_INDEX.items;
+            groupedItems = buildGroupedData(rawItems);
+            searchCache = buildSearchCache(groupedItems);
+
+            updateStats();
+            renderShelves();
+
+            document.getElementById("results").innerHTML =
+                '<div class="empty">Date încărcate. Scrie ce cauți.</div>';
+
+            document.getElementById("showCellText").addEventListener("change", () => {
+                if (document.getElementById("searchInput").value.trim()) search();
+            });
+
+            document.getElementById("showAllHits").addEventListener("change", () => {
+                if (document.getElementById("searchInput").value.trim()) search();
+            });
+        }
+
+        window.addEventListener("load", init);
+    </script>
+</body>
+</html>

@@ -1,0 +1,246 @@
+try {
+    $ErrorActionPreference = "Stop"
+
+    $RootFolder = $PSScriptRoot
+    $OutputJs = Join-Path $RootFolder "sea_index.js"
+
+    function Get-RelativePath {
+        param(
+            [string]$BasePath,
+            [string]$FullPath
+        )
+
+        if ([string]::IsNullOrWhiteSpace($FullPath)) { return "" }
+
+        if ($FullPath.Length -ge $BasePath.Length -and $FullPath.Substring(0, $BasePath.Length).ToLower() -eq $BasePath.ToLower()) {
+            return ($FullPath.Substring($BasePath.Length).TrimStart('\', '/') -replace '\\', '/')
+        }
+
+        return ($FullPath -replace '\\', '/')
+    }
+
+    function Normalize-PN {
+        param([string]$PN)
+
+        if ([string]::IsNullOrWhiteSpace($PN)) { return "" }
+
+        $value = $PN.Trim().ToUpper()
+        $value = $value -replace '\.(XLS|XLSX|XLSM|XLSB)$', ''
+        $value = $value -replace '[-_\s]+$', ''
+
+        return $value
+    }
+
+    function Get-SeaPNsFromText {
+        param([string]$Text)
+
+        $results = New-Object System.Collections.ArrayList
+        if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+
+        $upper = $Text.ToUpper()
+
+        # DOAR chestii care contin SEA
+        $patterns = @(
+            'SEA[0-9A-Z]*-[A-Z0-9]+(?:[-_][A-Z0-9]+)*'
+        )
+
+        foreach ($pattern in $patterns) {
+            $matches = [regex]::Matches($upper, $pattern)
+            foreach ($match in $matches) {
+                $pn = Normalize-PN $match.Value
+
+                if (-not [string]::IsNullOrWhiteSpace($pn) -and $pn -like "SEA*") {
+                    if ($results -notcontains $pn) {
+                        [void]$results.Add($pn)
+                    }
+                }
+            }
+        }
+
+        return @($results)
+    }
+
+    function Get-ExcelSeaHits {
+        param([string]$FilePath)
+
+        $excel = $null
+        $workbook = $null
+        $hits = New-Object System.Collections.ArrayList
+
+        try {
+            $excel = New-Object -ComObject Excel.Application
+            $excel.Visible = $false
+            $excel.DisplayAlerts = $false
+
+            $workbook = $excel.Workbooks.Open($FilePath, $false, $true)
+
+            foreach ($sheet in $workbook.Worksheets) {
+                $usedRange = $null
+
+                try {
+                    $sheetName = [string]$sheet.Name
+                    $usedRange = $sheet.UsedRange
+
+                    $rowCount = $usedRange.Rows.Count
+                    $colCount = $usedRange.Columns.Count
+
+                    for ($r = 1; $r -le $rowCount; $r++) {
+                        for ($c = 1; $c -le $colCount; $c++) {
+                            $cell = $null
+
+                            try {
+                                $cell = $usedRange.Item($r, $c)
+                                $text = [string]$cell.Text
+
+                                # FILTRU RAPID: nici nu cautam regex daca nu contine SEA
+                                if (-not [string]::IsNullOrWhiteSpace($text) -and $text.ToUpper().Contains("SEA")) {
+                                    $cellPns = Get-SeaPNsFromText $text
+
+                                    foreach ($pn in $cellPns) {
+                                        [void]$hits.Add([PSCustomObject]@{
+                                            pn = $pn
+                                            sheet = $sheetName
+                                            row = $r
+                                            column = $c
+                                        })
+                                    }
+                                }
+                            }
+                            finally {
+                                if ($cell -ne $null) {
+                                    try { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($cell) } catch {}
+                                }
+                            }
+                        }
+                    }
+                }
+                finally {
+                    if ($usedRange -ne $null) {
+                        try { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($usedRange) } catch {}
+                    }
+                    if ($sheet -ne $null) {
+                        try { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($sheet) } catch {}
+                    }
+                }
+            }
+
+            return @($hits)
+        }
+        catch {
+            Write-Host ""
+            Write-Host "EROARE la fisierul Excel:" -ForegroundColor Red
+            Write-Host $FilePath -ForegroundColor Red
+            Write-Host $_.Exception.Message -ForegroundColor Red
+            return @()
+        }
+        finally {
+            try { if ($workbook -ne $null) { $workbook.Close($false) } } catch {}
+            try { if ($workbook -ne $null) { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($workbook) } } catch {}
+            try {
+                if ($excel -ne $null) {
+                    $excel.Quit()
+                    [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel)
+                }
+            } catch {}
+
+            [GC]::Collect()
+            [GC]::WaitForPendingFinalizers()
+        }
+    }
+
+    Write-Host "=== GENEREZ sea_index.js ===" -ForegroundColor Cyan
+    Write-Host "Root: $RootFolder"
+    Write-Host ""
+
+    $files = Get-ChildItem -Path $RootFolder -File -Recurse | Where-Object {
+        $_.Extension.ToLower() -in @(".xls", ".xlsx", ".xlsm", ".xlsb") -and $_.Name -notmatch '\.tmp$'
+    }
+
+    $items = New-Object System.Collections.ArrayList
+    $count = 0
+
+    foreach ($file in $files) {
+        $count++
+        $relativePath = Get-RelativePath $RootFolder $file.FullName
+        $folderPath = (Split-Path -Path $relativePath -Parent) -replace '\\', '/'
+
+        Write-Host "[$count/$($files.Count)] $relativePath" -ForegroundColor DarkGray
+
+        # PN-uri din numele fisierului - doar daca au SEA
+        if ($file.Name.ToUpper().Contains("SEA")) {
+            $namePns = Get-SeaPNsFromText $file.Name
+
+            foreach ($pn in $namePns) {
+                [void]$items.Add([PSCustomObject]@{
+                    pn = $pn
+                    file = $file.Name
+                    folder = $folderPath
+                    fullRoute = $relativePath
+                    source = "filename"
+                    sheet = ""
+                    row = $null
+                    column = $null
+                })
+            }
+        }
+
+        # PN-uri din Excel - doar daca au SEA
+        $hits = Get-ExcelSeaHits $file.FullName
+        foreach ($hit in $hits) {
+            [void]$items.Add([PSCustomObject]@{
+                pn = $hit.pn
+                file = $file.Name
+                folder = $folderPath
+                fullRoute = $relativePath
+                source = "cell"
+                sheet = $hit.sheet
+                row = $hit.row
+                column = $hit.column
+            })
+        }
+    }
+
+    # deduplicare
+    $unique = New-Object System.Collections.ArrayList
+    $seen = @{}
+
+    foreach ($item in $items) {
+        $key = "$($item.pn)|$($item.fullRoute)|$($item.source)|$($item.sheet)|$($item.row)|$($item.column)"
+        if (-not $seen.ContainsKey($key)) {
+            $seen[$key] = $true
+            [void]$unique.Add($item)
+        }
+    }
+
+    $output = [PSCustomObject]@{
+        generatedAt = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        rootFolder = $RootFolder
+        totalFiles = $files.Count
+        totalMatches = $unique.Count
+        items = @($unique | Sort-Object pn, fullRoute, sheet, row, column)
+    }
+
+    $json = $output | ConvertTo-Json -Depth 10
+    $js = "window.SEA_INDEX = " + $json + ";"
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($OutputJs, $js, $utf8NoBom)
+
+    Write-Host ""
+    Write-Host "=== GATA ===" -ForegroundColor Green
+    Write-Host "Fisiere scanate: $($files.Count)"
+    Write-Host "Potriviri SEA: $($unique.Count)"
+    Write-Host "Fisier generat: $OutputJs"
+}
+catch {
+    Write-Host ""
+    Write-Host "=== EROARE ===" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host ""
+    Write-Host $_.InvocationInfo.PositionMessage -ForegroundColor Yellow
+}
+finally {
+    Write-Host ""
+    Write-Host "Apasa Enter..."
+    Read-Host
+}
